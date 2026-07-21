@@ -1,0 +1,5 @@
+CorrelationId: fdd42a16-0903-4d19-8af7-f19fa5dfdb80
+UTC DateTime: 07/20/2026 01:15:34
+
+The following file/folder has not been downloaded
+0. Lecture04-Spatial-Regression-Slippery-Slopes/.Rhistory
