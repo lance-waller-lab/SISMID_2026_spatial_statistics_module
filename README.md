@@ -1,4 +1,4 @@
-# SISMID_2026_spatial_statistics_module
+# SISMID 2026: Spatial Statistics in Epidemiology and Public Health
 Github repository for the SISMID 2026 "Spatial Statistics in Epidemiology and Public Health" module
 
 **Course Dates**: Wednesday, July 22, 2026 to Friday, July 24, 2026
