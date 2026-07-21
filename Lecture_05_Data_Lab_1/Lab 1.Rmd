@@ -1,0 +1,479 @@
+---
+title: |
+  <span style="color: blue;">Spatial Statistics in Epidemiology and Public Health - SISMID 2026</span><br>
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+    html_document:
+      toc: true       
+      toc_depth: 2
+      number_sections: true
+      code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+h1 { font-size: 24px; } /* # Heading 1 */
+h2 { font-size: 20px; } /* ## Heading 2 */
+h3 { font-size: 16px; } /* ### Heading 3 */
+</style>
+```
+
+<br>
+
+# Mini Project Overview
+
+In this lab session, we will work through the following key steps in
+conducting a spatial analysis.
+
+1.  Identify and acquire geospatial datasets.
+2.  Prepare spatial data objects in R.
+3.  Visualize the data with maps.
+4.  Perform exploratory data analysis.
+5.  Specify and fit regression models.
+6.  Summarize results.
+
+Utilizing the skillsets we just learned, this lab session will focus on
+analyzing <u>**county-level data**</u>. You are encouraged to come up
+with a unique mini research question by identifying an outcome and a
+risk factor of interest using the datasets describe below. You may also
+choose to just follow along with the examples!
+
+<br> <br>
+
+# Finding Geospatial Datasets
+
+**Suggested Time: 20 minutes**
+
+Publicly available data products often have an online visualization tool
+to help users explore data elements and assist with data download. Below
+are three example products by the US CDC. Spend a few minutes exploring
+the variable available at the county-level.
+
+1.  **AtlasPlus** from the National Center for HIV, Viral Hepatitis,
+    STD, and Tuberculosis Prevention.
+    - Link: <https://gis.cdc.gov/grasp/nchhstpatlas/maps.html>
+    - About: <https://www.cdc.gov/nchhstp/about/atlasplus.html>
+2.  **Data Explorer** from the National Environmental Public Heatlh
+    Tracking Network
+    - Link: <https://ephtracking.cdc.gov/DataExplorer/>
+    - About: <https://ephtracking.cdc.gov/indicatorPages>
+
+<br>\
+
+::: {style="background-color: #f4f6f8; border: 1px solid #ccd1d9; border-left: 6px solid #0076b6; padding: 8px; border-radius: 4px;"}
+<h4>**Specific Tasks**</h4>
+
+- Identify your research question by picking an outcome of interest and
+  some covariates with data available at the county-level.
+- Select a study region with at least 50 counties (e.g., a single state
+  of a few contiguous states).
+- Figure out how to download the data (typically in a .csv file format).
+- Share in the Slack Channel about what research topic you have chosen!
+:::
+
+<br>
+
+<p>
+
+<button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#collapseBox" aria-expanded="false" aria-controls="collapseBox">
+
+Example
+
+</button>
+
+</p>
+
+:::: {#collapseBox .collapse}
+::: {.card .card-body style="background-color: #f8f9fa; border: 1px solid #ddd; padding: 15px;"}
+This analysis aims to estimate associations between emergency department
+visits for asthma and particulate matter air pollution from diesel. We
+will utilize the 2019 annual county-level data from the National
+Environmental Public Health Tracking Network.The study region will
+include 4 states from the Mid-Atlantic and Northeast region (PA, MD, NY
+and NJ). We also obtained variables on the population size.
+
+The downloaded datasets *asthmaED_2019.csv*, *diesel_2019.csv* and
+*population_2019.csv* are on the course website.
+:::
+::::
+
+<br> <br>
+
+# Data Wrangling
+
+**Suggested Time: 20 minutes**
+
+The first step is to construct an analytic data from the files we just
+downloaded. We will use the county 5-digit ID (FIPS Code) for linkage.
+Here are the issues we encountered and some potential other ones.
+
+- Missing values are in given text "suppressed," which we re-code to NA
+  and convert the variable to numeric.\
+- Population size is stratified by age group, and we sum up all groups
+  within each county.
+- Some county FIPS ID has less than 5 digits because of missing leading
+  zeros, which needs to be padded.
+
+<br>\
+
+::: {style="background-color: #f4f6f8; border: 1px solid #ccd1d9; border-left: 6px solid #0076b6; padding: 8px; border-radius: 4px;"}
+<h4>**Specific Tasks**</h4>
+
+- Identify the variables needed from the downloaded datasets.
+- Check issues related to missing data.
+- Examine summary statistics of the variables and create some
+  exploratory plots (boxplot, histogram, scatter plot).
+:::
+
+<br>
+
+<p>
+
+<button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#collapseBox2" aria-expanded="false" aria-controls="collapseBox">
+
+Example
+
+</button>
+
+</p>
+
+:::: {#collapseBox2 .collapse}
+::: {.card .card-body style="background-color: #f8f9fa; border: 1px solid #ddd; padding: 15px;"}
+```{r, message = FALSE, warning = FALSE}
+install.packages("pacman")
+
+pacman::p_load(patchwork,
+               dplyr,
+               readr,
+               table1,
+               here)
+library (dplyr)
+library (readr)
+library (table1)
+
+here::i_am("Lab 1.Rmd")
+
+### Read in CSV files ###
+asthma = read.csv ("Lab Example Data/asthmaED_2019.csv")
+diesel = read.csv ("Lab Example Data/diesel_2019.csv")
+pop = read.csv ("Lab Example Data/population_2019.csv")
+
+### Rename variable
+asthma =  rename (asthma, asthma = Value)
+diesel = rename (diesel, diesel = Value)
+
+#Replace suppressed values with NA
+asthma = asthma %>%
+  mutate (asthma = na_if (asthma, "Suppressed"))
+asthma$asthma = parse_number(asthma$asthma)
+
+#Aggregate age-group population to total population
+pop$pop = parse_number(pop$Value)
+pop_tot = pop %>% 
+  group_by (CountyFIPS) %>% 
+  summarize (pop_total = sum (pop))
+
+# Subset to study states ###
+dat = subset (asthma, State %in% c("Maryland", "Pennsylvania", "New York", "New Jersey") )
+dat =  dat %>% select (State, CountyFIPS, County,  asthma)
+
+# Merge data by CountyFIPS
+dat = dat %>% 
+  left_join(diesel %>% select (CountyFIPS, diesel), by = join_by (CountyFIPS)) %>%
+  left_join(pop_tot, by = join_by (CountyFIPS))
+
+dat$rate = round(dat$asthma/dat$pop_total*10000 )
+
+table1(~State + asthma+ diesel + pop_total + rate, data = dat)
+```
+
+```{r, fig.align="center", out.width="60%"}
+plot (dat$rate~dat$diesel, xlab = "Annual Diesel PM Pollution Concentration", ylab = "Astham ED Rate (per 10,000)", main= "Annual Asthma Emergency Department Visit Rates in 2019")
+```
+:::
+::::
+
+<br> <br>
+
+# Creating Geospatial Datasets and Mapping
+
+**Suggested Time: 20 minutes**
+
+For area-level data, we need to associate geospatial polygon information
+to each county. This is often included in a *shapefiles*. The US Census
+Bureau [publishes
+shapefiles](https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.2024.html#list-tab-790442341)
+for various geographica units (e.g., county, tracts, ZCTA). Here we will
+use *tigris* package that downloads from the Census. Below is the code
+snippet for our example with 4 states.
+
+```{r, message = FALSE, warning = FALSE, class.source = "fold-show"}
+
+library (tigris)
+options(tigris_use_cache = TRUE)
+
+#option cb = TRUE to download the coarser version for speed
+#we choose the year 2020
+dat_sf <- counties(state = c("MD", "PA", "NY", "NJ"), cb = TRUE, year = 2020)
+```
+
+::: {style="background-color: #f4f6f8; border: 1px solid #ccd1d9; border-left: 6px solid #0076b6; padding: 8px; border-radius: 4px;"}
+<h4>**Specific Tasks**</h4>
+
+- Download the county shapefile for your study region.
+- Create two county maps showing your outcome and exposure of interests.
+  Share on Slack channel!
+:::
+
+<br>
+
+<p>
+
+<button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#collapseBox4" aria-expanded="false" aria-controls="collapseBox">
+
+Example
+
+</button>
+
+</p>
+
+:::: {#collapseBox4 .collapse}
+::: {.card .card-body style="background-color: #f8f9fa; border: 1px solid #ddd; padding: 15px;"}
+Note that the resulting dataset is an *sf* object. Geometry is recorded
+in latitude and longtidue (NAD83). The dataset already contains several
+variables. **GEOID** is the 5-digit FIPS code for linking to other
+datasets. Below are the first 3 rows of the download county shapefil
+dataset and its meta data. A quick map shows that we have acquired the
+correct shapefile!
+
+```{r}
+head (dat_sf, 3)
+```
+
+```{r, fig.align="center", out.width="60%"}
+library (ggplot2)
+ggplot(data = dat_sf) +
+  geom_sf(fill = "whitesmoke", color = "gray60", size = 0.1) +  theme_void() +
+  labs(title = "Study Region")
+```
+
+Next, we merge our dataset with the county sf object, and create
+choropleth maps for the exposure and outcome. *dplyr* joint functions
+can work with *sf*. Note that two PA counties with missing ED data in
+grey.
+
+```{r, fig.align="center", out.width="90%"}
+library (patchwork)
+dat$CountyFIPS = as.character (dat$CountyFIPS)
+dat_sf = dat_sf %>% left_join (dat,  by = join_by (GEOID == CountyFIPS) )
+
+g1 = ggplot(data = dat_sf) +
+  geom_sf(aes(fill = rate)) + 
+  labs(title="Asthma ED Rates per 10,000")+scale_fill_gradient2(low = "white",high = "blue")
+
+g2= ggplot(data = dat_sf) +
+  geom_sf(aes(fill = diesel)) + 
+  labs(title="Diesel Particulate Matter Pollution")+scale_fill_gradient2(low = "white",high = "red")
+
+g1+g2
+
+```
+:::
+::::
+
+<br> <br>
+
+# Spatial Exploratory Analysis
+
+**Suggested Time: 20 minutes**
+
+Based the outcome, study region and maps from Section 4, what should we
+use as the neighbor/network structure to induce spatial correlation? The
+most commonly used one for county-level is to use whether two counties
+share a border.
+
+<br>
+
+::: {style="background-color: #f4f6f8; border: 1px solid #ccd1d9; border-left: 6px solid #0076b6; padding: 8px; border-radius: 4px;"}
+<h4>**Specific Tasks**</h4>
+
+- Construct an adjacency matrix for the analysis.
+- Is there evidence of spatial auto-correlation in the outcome and
+  covariates?
+:::
+
+<br>
+
+<p>
+
+<button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#collapseBox5" aria-expanded="false" aria-controls="collapseBox">
+
+Example
+
+</button>
+
+</p>
+
+:::: {#collapseBox5 .collapse}
+::: {.card .card-body style="background-color: #f8f9fa; border: 1px solid #ddd; padding: 15px;"}
+In our example, we define spatial neighbors using *either* the 1st-order
+adjacency (i.e., sharing a boundary) or two counties have centroids that
+are within 25 km. This is because some small counties counties do not
+share a border across rivers. We also drop the two counties with missing
+data.
+
+```{r, message = FALSE, warning = FALSE, class.source = "fold-show"}
+library (spdep)
+
+#Drop missing data
+dat_sf = subset (dat_sf, !is.na (dat_sf$rate))
+
+#Project the data to, for example, the Lambert Conformal Conic North America.
+dat_proj = st_transform(dat_sf, crs = "ESRI:102004")
+center_proj = st_centroid(dat_proj)
+
+#Create 1-st order adjacency and distance buffer (100km)
+nb.1st = poly2nb (dat_proj)
+nb.buffer = dnearneigh(center_proj, d1=0, d2 = 25*1000)
+nb = union.nb (nb.1st, nb.buffer) #take the union of neighbors
+
+#Create weight matrix
+W= nb2listw(nb, style="W")
+W
+
+#Monte Carlo-based Moran's I
+moran.mc(dat_sf$rate, W, nsim = 10000)
+moran.mc(dat_sf$diesel, W, nsim = 10000)
+
+```
+
+<br>
+
+**Conclusion**: We observe positive Moran's I for both asthma ED rates
+(0.29) and diesel air pollution (0.86) with p-value \< 0.01 based a
+permutation test of 10,000 Monte Carlo simulations against the null
+hypothesis of no spatial autocorrelation. We can also see from the maps
+from Section 4 that exposure variable is more spatially homogeneous.
+:::
+::::
+
+<br> <br>
+
+# Spatial Regression Modeling
+
+**Suggested Time: 20 minutes**
+
+<br> We will now use conditional autoregressive models to estimate the
+association between the outcome and covariates.
+
+<br>
+
+::: {style="background-color: #f4f6f8; border: 1px solid #ccd1d9; border-left: 6px solid #0076b6; padding: 8px; border-radius: 4px;"}
+<h4>**Specific Tasks**</h4>
+
+- Describe or write down the statistical model.
+- Fit the model using INLA and summarize results.
+- Compare your model to a conventional model without accounting for
+  spatial dependence.
+:::
+
+<br>
+
+<p>
+
+<button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#collapseBox6" aria-expanded="false" aria-controls="collapseBox">
+
+Example
+
+</button>
+
+</p>
+
+:::: {#collapseBox6 .collapse}
+::: {.card .card-body style="background-color: #f8f9fa; border: 1px solid #ddd; padding: 15px;"}
+For county $s$, let $Y_s$ be the number of asthma ED visit, $X_s$ be the
+diesal air pollution exposure, and $P_s$ be the population size. We
+consider several Poisson log-linear models of the following form.
+
+$$\begin{aligned}
+Y_s &\sim \operatorname{Poisson}(\mu_s) \\
+\log(\mu_s) &= \log(P_s) + \beta_0 + \beta_1 X_{s} + \theta_s
+\end{aligned}$$
+
+1.  The standard Poisson model assumes no spatial variation
+    ($\theta_s = 0$ for all $s$).
+
+2.  The independent random intercept model assumes that
+    $\theta_s \sim N(0, \tau^2)$.
+
+3.  The spatial random intercept model (under the improper CAR model
+    formulation) assumes that $\theta_s = \eta_s + \gamma_s$, where
+    $\eta_s \sim N(0, \tau^2)$ and $\gamma_s$ is a conditional
+    autoregressive model.
+
+```{r, message = FALSE, warning = FALSE}
+install.packages("INLA",
+  repos = c(getOption("repos"), INLA = "https://inla.r-inla-download.org/R/testing"),
+  type = "binary",
+  dep = TRUE)
+library (INLA)
+
+#Some data wrangling first
+dat_sf$areal_ID = 1:nrow (dat_sf) #Create a county ID from 1 to 226
+dat_sf$log_pop = log (dat_sf$pop_total)
+dat_sf$diesel_std = dat_sf$diesel / 0.1 #standardized by the interquartile range (0.1)
+
+#INLA needs a specific summary of adjacency structure
+nb2INLA ("adj.txt", nb) #write out a file
+G <- inla.read.graph(filename = "adj.txt") #read in to get INLA's graph format
+
+#Fit glm
+fit.glm = glm (asthma~diesel_std+offset (log_pop), dat = dat_sf, family = "poisson")
+
+#Fit exchangeable (random effect model)
+#Note: "E" here is the offset and it does not need to be log-transformed
+fit.exch = inla (asthma~1+f(areal_ID)+diesel_std, E= pop_total, family = "poisson", data = dat_sf,
+                 control.compute = list(dic = TRUE, waic = TRUE, return.marginals.predictor=TRUE))
+
+#Fit improper CAR model (Besag)
+fit.iCAR = inla (asthma~1+f(areal_ID,  model = "besag", graph = G)+diesel_std, E= pop_total, family = "poisson", data = dat_sf,control.compute = list(dic = TRUE, waic = TRUE))
+
+```
+
+The table below summarizes the estimated relative rate $e^{\beta_1}$ per
+interquartile range increase in diesel air pollution.
+
+```{r}
+
+### Extract coefficients from each model
+library (knitr)
+glm.coef = summary(fit.glm)$coefficients
+fit.iCAR.coef = fit.iCAR$summary.fixed
+fit.exch.coef = fit.exch$summary.fixed
+
+coefs = round(c(glm.coef[2,1], fit.exch.coef$mean[2], fit.iCAR.coef$mean[2]),2)
+se =  round(c(glm.coef[2,2], fit.exch.coef$sd[2], fit.iCAR.coef$sd[2]),2)
+low95 = round(exp(c( coefs[1]-1.96*se[1], fit.exch.coef$`0.025quant`[2], fit.iCAR.coef$`0.025quant`[2])), 2)
+up95 = round(exp(c( coefs[1]+1.96*se[1], fit.exch.coef$`0.975quant`[2], fit.iCAR.coef$`0.975quant`[2])),2)
+results = data.frame (
+  model = c("GLM", "Ind Random Effect", "Spatial"),
+  beta = coefs, se = se, rr = round(exp (coefs),2), ci = paste0("(", low95, ", ", up95, ")"))
+
+kable (results,
+       col.names = c("Model", "&beta;", "Std Err", "RR", "95% Interval"))
+
+```
+
+- All 3 models show the counties with higher level of diesel pollution
+  are associated with with higher rate of asthma ED visits.
+- The model without accounting for spatial correlation have the smallest
+  standard error, which is likely an under-estimation.
+- The spatial model estimates that a 21% increase in asthma ED visit is
+  associated per IQR range increase in exposure.
+:::
+::::
+
+<br> <br> <br>
