@@ -1,0 +1,210 @@
+---
+title: |
+  <span style="color: blue;">Spatial Statistics in Epidemiology and Public Health - SISMID 2026</span><br>
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+    html_document:
+      toc: true       
+      toc_depth: 2
+      number_sections: true
+      code_folding: hide
+---
+    
+<style type="text/css">
+h1 { font-size: 24px; } /* # Heading 1 */
+h2 { font-size: 20px; } /* ## Heading 2 */
+h3 { font-size: 16px; } /* ### Heading 3 */
+</style>
+    
+<br>
+
+    
+# Working with Spatial Point Pattern
+
+We will first load in the Atlanta police department crime data from 2014 and its jurisdiction shapefile. These files were obtained from [here](http://www.atlantapd.org/crimedatadownloads.aspx). The ATL police department is divided into 6 zones [map](http://www.atlantapd.org/findmyzone.aspx), plus the airport. We will drop the airport in this analysis. 
+ 
+```{r, message = FALSE, warning = FALSE, class.source = "fold-show"}
+library (sf)
+library (ggplot2)
+library (here)
+here::i_am("Data Lab 2.Rmd")
+dat = st_read("apd_NewZone_2011_region.shp")
+
+#Remove airport
+dat = dat[-1,]
+plot (st_geometry(dat))
+```
+
+Next we will load a CSV file containing occurrences of crime. The data set has the following variables.
+
+* occur_date: date when the crime occurred.
+* occur_time: time when the crime occurred.
+* Type: type of crime. 
+* x: latitude.
+* y: longitude.
+* hour: hour when the crime occured. 
+
+```{r, class.source = "fold-show"}
+crime = read.csv ("ATL_Crime_2014.csv")
+summary (crime)
+```
+
+
+We will need to do several things in preparation for a point pattern analysis. 
+
+1. Fuse the 6 polygons into an overall study region.
+2. Make sure all points fall within the study region.
+3. Perform projection to use Euclidean distance in subsequent analyses.
+
+```{r, class.source = "fold-show"}
+## Fuse polygons
+region = st_union (dat)
+
+## Check overlap
+crime = st_as_sf(crime, coords = c("x","y"))
+st_crs (crime) = st_crs (region)
+check.overlap = as.matrix(st_contains ( region, crime))
+crime = crime[check.overlap, ]
+```
+
+Here is a map of the joined regions and all the reported crime events. 
+```{r}
+ggplot() + geom_sf (data=st_geometry(region)) + geom_sf (data=st_geometry (crime), col = "blue", size = 0.2) +
+  labs (title="All Events")
+```
+
+We need to have the longitude and latitude projected for later analyses. 
+```{r, class.source = "fold-show"}
+## Projection to the USA Contiguous Albers Equal Area 
+crs.albers = "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
+crime = st_transform(crime, crs.albers)
+region = st_transform (region, crs.albers )
+```
+
+```{r}
+#Some Exploratory Plots
+par (mfrow = c(1,2))
+plot (region, lwd=3, main = "Burglary (Non-residential)")
+lines (st_coordinates(crime)[crime$Type =="BURGLARY-NONRES",], col = 4, pch = 16, type = "p", cex = 0.2)
+plot (region, lwd=3, main = "Burglary (Residential)")
+lines (st_coordinates(crime)[crime$Type =="BURGLARY-RESIDENCE",], col = 4, pch = 16, type = "p", cex = 0.2)
+
+par (mfrow = c(1,2))
+plot (region, lwd=3, main = "Non-Vehicle Larceny (8am-8pm)")
+lines (st_coordinates(crime)[crime$Type =="LARCENY-NON VEHICLE"& crime$hour %in% c(8:20),], col = 4, pch = 16, type = "p", cex = 0.2)
+plot (region, lwd=3, main = "Non-Vehicle Larceny (9pm-7am)")
+lines (st_coordinates(crime)[crime$Type =="LARCENY-NON VEHICLE"& !crime$hour %in% c(8:20),], col = 4, pch = 16, type = "p", cex = 0.2)
+```
+
+<br>
+<br>
+
+# Point Pattern Analysis 
+
+The package *spatstat* contains the majority of functions to do point pattern analysis. To store point pattern data *spatstat* uses the object *ppp*. Some important components of *ppp* are:
+
+1. x: Vector of x coordinates of points.
+2. y: Vector of y coordinates of points.
+3. window: define the study region. This is not the same as a *SpatialPolygon* object. 
+4. marks: values associated with the points
+
+Here we use burglary at residence as an example. Feel free to choose any other type of crime to analyze! 
+
+```{r, message = FALSE, warning = FALSE, class.source = "fold-show"}
+library (spatstat)
+
+#Convert the sf to "window" for spatstat
+window = as.owin (region)
+plot (window)
+summary (window)
+
+points = st_coordinates(crime)[ crime$Type == "BURGLARY-RESIDENCE",]
+pp = ppp (x=points[,1], y = points[,2], window = window)
+
+#Rescale to km and add the unit information
+pp = rescale (pp, s = 1000)
+unitname(pp) <- "km"
+
+summary (pp)
+plot (pp, main = "Burglary at Residence")
+
+```
+<br>
+<br>
+
+# Exploratory Analysis: Intensity
+
+The *density* function provides estimated intensity.  We will need to select a bandwidth (sigma). The figures below compare sigma = 0.5, 1 or 2. 
+
+```{r}
+#First examine different Gaussian kernel bandwidth (standard deviation = sigma)
+par (mfrow = c(2,2), mar = c(0,0,2,0))
+plot (density(pp, sigma=0.5), main = "Sigma = 0.5")
+plot (density(pp, sigma=1), main = "Sigma = 1")
+plot (density(pp, sigma=2), main = "Sigma = 2")
+plot (pp, cex=0.4, pch = 16, main = "Observed Points")
+```
+
+
+We often apply an "edge-correction" to the intensity map because the kernel window will include regions outside of the study area near the boundary. Below we choose bandwidth sigma = 1, and apply two common correction methods. 
+
+```{r}
+par (mfrow = c(2,2), mar = c(0,0,2,0))
+plot (density(pp, sigma=1), main = "Uniformly Corrected") ##Uniform corrected
+plot (density(pp, sigma=1, diggle=TRUE), main = "Diggle's Correction") #Diggle corrected
+plot (density(pp, sigma=1, edge = FALSE), main = "Uncorrected") #Uncorrected
+plot (pp, cex=0.4, pch = 16, main = "Observed Points")
+```
+<br>
+<br>
+
+# Relative Ratio of Two Intensity Functions
+
+Point patterns often have "marked" attributes and we may be interested in how different intensities vary spatially. Here we will estimate relative rate of residential robbery versus residential burglary using the R package *sparr*
+
+We first create a similar point pattern for robbery. We can see that the intensity is also higher 
+
+```{r, message = FALSE, warning = FALSE}
+points = st_coordinates(crime)[ crime$Type == "ROBBERY-RESIDENCE",]
+pp_rob = ppp (x=points[,1], y = points[,2], window = window)
+pp_rob = rescale (pp_rob, s = 1000)
+
+par (mfrow = c(1,2))
+plot (pp_rob, main = "Robbery (Residential)")
+plot (density(pp_rob, cex = 0.4, sigma=1, edge = TRUE), main = "Intensity") 
+```
+
+Here is the ratio of intensities (robbery versus burglary).
+```{r, message = FALSE, warning = FALSE}
+library (sparr)
+fit = risk (pp_rob, pp, edge="diggle")
+plot (fit, mian = "Log Ratio")
+```
+
+# Spatial Dependence and K-function
+
+Next we will examine spatial dependence cumulative distribution of the average number of points within a specific radius. We will compare residential burglary and vehicle larceny. 
+
+```{r, message = FALSE, warning = FALSE}
+points1 = st_coordinates(crime)[crime$Type == "BURGLARY-RESIDENCE",]
+pp1 = ppp (x=points1[,1], y = points1[,2], window = window)
+
+points2 = st_coordinates(crime)[crime$Type == "LARCENY-FROM VEHICLE",]
+pp2 = ppp (x=points2[,1], y = points2[,2], window = window)
+
+par (mfrow = c(1,2))
+plot (pp1, main = "Burglary (Residence)", cex = 0.2)
+plot (pp2, main = "Larceny (Vehicle)", cex = 0.2)
+```
+
+Below are the k-functions estimated with edge-correction ("border") or uncorrected ("un"). The green line ("pois") represents the k-function under homogeneity (i.e., $\pi r^2$). We can see evidence of stronger dependence for vehicle larceny compared to burglary. 
+
+```{r}
+par (mfrow = c(1,2))
+plot (Kest (pp1, correction = c("none", "border")), main = "Burglary (Residence)", lwd = 3, ylim = c(0, 1.2e+08))
+plot (Kest (pp2, correction = c("none", "border")), main = "Larceny (Vehicle)", lwd = 3, ylim = c(0, 1.2e+08))
+```
+
+
+
+
