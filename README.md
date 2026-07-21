@@ -47,11 +47,11 @@ where the star denotes the INLA package version number. Download the zip file to
 2. Areal Data (EDA, clustering) (**Chang**) 
 3. Disease Mapping  (CARs, Bayesian analysis with INLA) (**Chang**) 
 4. Spatial regression + Spatial Coefficient (**Waller**) 
-5. Data Lab 1 Spatial Data Wrangling (**Chang/Waller**) 
-6. Data Lab 2 Spatial Regression (**Chang/Waller**) 
+5. Lab 1: Spatial Data Wrangling (**Chang/Waller**) 
+6. Lab 2: Spatial Regression (**Chang/Waller**) 
 7. Point Processes (**Waller**)
 8. Gaussian Processes (**Chang**)
-9. Data Lab 3 Point Processes and Gaussian Processes (**Chang/Waller**) 
+9. Lab 3: Point Processes and Gaussian Processes (**Chang/Waller**) 
 10. Spatial infectious disease (SIR), ecology (**Waller**) 
 
 ## Reference
