@@ -37,7 +37,7 @@ where the star denotes the INLA package version number. Download the zip file to
 
 1. Go to the green "Code" button near the top of this page, click, and download as a zip file to your computer.
 2. Save the zip file to a directory of your choice, then unzip the file.   You will see a folder of lectures, a folder for data, etc.
-3. IMPORTANT:  You will also see a file 2026-SISMID.Rproj this will pull in all of the lab code and data as a project.
+3. IMPORTANT:  You will also see a file named "SISMID_2026_spatial_statistics.Rproj" ; this will pull in all of the lab code and data as a project.
 4. If you are unfamiliar with R/RStudio, you can focus on reading through the lab pdfs to see examples of what you can do.
 5. If you are familiar with R/RStudio, you can try out the Rmd code.
 
