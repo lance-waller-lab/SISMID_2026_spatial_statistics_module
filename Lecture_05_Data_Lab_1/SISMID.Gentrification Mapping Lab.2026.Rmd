@@ -28,6 +28,9 @@ We will also need tidycensus and tidyverse
 library(tigris)
 library(dplyr)
 library(tidyverse)
+library(here)
+
+here::i_am("SISMID.Gentrification Mapping Lab.2026.Rmd")
 ```
 
 ## Reading in and mapping census tracts
