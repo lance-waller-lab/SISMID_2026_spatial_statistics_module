@@ -1,0 +1,298 @@
+---
+title: "SISMID Geospatial Gentrification Lab"
+author: "Lance A. Waller"
+date: "2026-07-14"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## TADA Gentrification Index Merging Census Data
+
+Goal of the lab: We want to use R to map census tract level data, read in an Excel file (saved as a "comma separated value" (.csv) file of additional demographic data), merge the new data to the map data, calculate the gentrication index from Corrigan et al. (2021, Applied Geography) and map the index.
+
+To start we use the online text Analyzing US Census Data:  Methods, Maps, and Models in R by Kyle Walker...online markdown at <https://walker-data.com/census-r/index.html>.  Specifically, we'll use Chapter 5 (Census geographic data and applications in R <https://walker-data.com/census-r/census-geographic-data-and-applications-in-r.html>) and 
+Chapter 6 (Mapping Census data in R)
+<https://walker-data.com/census-r/mapping-census-data-with-r.html>
+
+Next we learn to read in TIGER (Topographically Integrated GEographic Reference) files...the map boundary data from the US Census.
+
+These data are in the tigris R package.
+We will also need tidycensus and tidyverse
+
+```{r}
+library(tigris)
+library(dplyr)
+library(tidyverse)
+```
+
+## Reading in and mapping census tracts
+
+```{r}
+library(tidycensus)
+# Add your tidycensus API key from our earlier lab here
+census_api_key("7efec8b05c7c64f71a8765a85f0f7d1e4b4e0599")
+options(tigris_use_cache = TRUE)
+
+dc_income <- get_acs(
+  geography = "tract", 
+  variables = "B19013_001",
+  state = "DC", 
+  year = 2020,
+  geometry = TRUE
+)
+
+dc_income
+```
+
+From the book:
+"Median household income data are found in the estimate column with associated margins of error in the moe column, along with a variable ID, GEOID, and Census tract name. However, there are some notable differences. The geometry column contains polygon feature geometry for each Census tract, allowing for a linking of the estimates and margins of error with their corresponding locations in Washington, DC. Beyond that, the object is associated with coordinate system information - using the NAD 1983 geographic coordinate system in which Census geographic datasets are stored by default."
+
+Lance's note:  GEOID is the FIPS code for the Census tracts in Washington DC...we will need to use this identifier to merge data in our work below.
+
+## Mapping
+From the book:
+"Such geographic information can be difficult to understand without visualization. As the returned object is a simple features object, both geometry and attributes can be visualized with plot(). Key here is specifying the name of the column to be plotted inside of brackets, which in this case is "estimate"."
+
+```{r}
+plot(dc_income["estimate"])
+```
+
+Cool!   We can read in tract data from tigris and map it with the plot function!
+
+Let's see if we can read in tracts from Georgia. We'll change the state to "GA" and rename our income variable.
+
+```{r}
+ga_income <- get_acs(
+  geography = "tract", 
+  variables = "B19013_001",
+  state = "GA", 
+  year = 2016,
+  geometry = TRUE
+)
+
+ga_income
+```
+
+Note:  The first 2 digits of the GEOID (FIPS Code) are now "13" which is the FIPS code for the state of GA.
+
+Let's map it.
+
+```{r}
+plot(ga_income["estimate"])
+```
+
+We can add a county list to limit the map to those counties.  For the Corrigan paper we want Cobb, Fulton, DeKalb, Gwinnett, and Clayton.   We'll call this Atlanta metro.
+
+```{r}
+metro_atlanta_income <- get_acs(
+  geography = "tract", 
+  variables = "B19013_001",
+  state = "GA", 
+  county = c("Fulton","DeKalb","Cobb","Gwinnett","Clayton"),
+  year = 2016,
+  geometry = TRUE
+)
+
+metro_atlanta_income
+```
+
+Map it
+
+```{r}
+plot(metro_atlanta_income["estimate"])
+```
+
+Great!...We do notice some "holes" which are census tracts for which there are no ACS data.  We will ignore these for now.
+
+Corrigan et al.'s (2021) gentrification score is defined on page 2 of their paper.  "A gentrification score was calculated by summing the standarized percent change between time 1 and time 2 for all indicators."
+
+The seven indicators are:
+
+- Percent non-Hispanic white residents,
+
+- Percent of residents aged 25-34 years old,
+
+- Percent of residents that were *not* in poverty,
+
+- Percent of residents working in professional occupations,
+
+- Median gross rent,
+
+- Median house value,
+
+- Median household income in the past 12 months.
+
+Sabriya Linton shared the tables of values for census tracts from 2016 and 2010 in two .csv files.
+
+We will:
+
+- Read in each csv 
+
+- Calculate the standardized difference for each tract.
+
+- Merge to the tract file we created above by matching the variable 'tract' in the .csv files to the variable 'GEOID' in the mapped data.
+
+- Map the results
+
+## Reading in a csv file
+
+Note:  Make sure you save the two .csv files in the same directory as your .Rmd code!
+
+```{r}
+gentrification_vars_2010 = read.csv("gentrification_vars_2010.csv")
+gentrification_vars_2016 = read.csv("gentrification_vars_2016.csv")
+```
+
+First few rows of 2010 data
+
+```{r}
+head(gentrification_vars_2010)
+```
+
+First few rows of 2016 data
+
+```{r}
+head(gentrification_vars_2016)
+```
+
+### Calculating the standardized differences
+
+To get the standardized difference, we take the difference between the 2016 and 2010 values *for each tract*, subtract the mean difference across tracts, and divide by the standard deviation of differences.   For each of the variables, we will need to calculate:
+
+difference = (value in 2016) - (value in 2010)
+std.diff = (difference - mean(difference))/sd(difference)
+
+NOTE:  The data contain some missing values (NAs)...the mean() and sd() functions won't work with NAs so we'll need to ask R to calculate the means and standard deviations without the NAs...one way to do this is set na.rm = TRUE in the calls to the mean() and sd()
+
+```{r}
+# calculate differences
+diff.NHWhite = gentrification_vars_2016$white_nonlat_pct - gentrification_vars_2010$white_nonlat_10_pct
+
+diff.2534 = gentrification_vars_2016$age_25to34_pct - gentrification_vars_2010$age_25to34_10_pct
+
+# doing 1-pov to make it percent not in poverty
+diff.notpov = (1-gentrification_vars_2016$pov_fams_pct) - (1-gentrification_vars_2010$pov_fams_10_pct)
+
+diff.prof = gentrification_vars_2016$prof_ind_pct - gentrification_vars_2010$prof_ind_10_pct
+
+diff.medrent = gentrification_vars_2016$rent_medgross - gentrification_vars_2010$rent_medgross_10
+
+diff.houseval = gentrification_vars_2016$Hhval_med - gentrification_vars_2010$Hhval_med_10
+
+diff.income = gentrification_vars_2016$inc_Hhmed - gentrification_vars_2010$inc_Hhmed_10
+```
+
+Standardize the differences
+```{r}
+std.diffNHWhite = (diff.NHWhite - mean(diff.NHWhite,na.rm=TRUE))/sd(diff.NHWhite,na.rm=TRUE)
+
+head(std.diffNHWhite)
+
+std.diff.2534 = (diff.2534 - mean(diff.2534,na.rm=TRUE))/sd(diff.2534,na.rm=TRUE)
+std.diff.notpov = (diff.notpov - mean(diff.notpov,na.rm=TRUE))/sd(diff.notpov,na.rm=TRUE)
+std.diff.prof = (diff.prof - mean(diff.prof,na.rm=TRUE))/sd(diff.prof,na.rm=TRUE)
+std.diff.medrent = (diff.medrent - mean(diff.medrent,na.rm=TRUE))/sd(diff.medrent,na.rm=TRUE)
+std.diff.houseval = (diff.houseval - mean(diff.houseval,na.rm=TRUE))/sd(diff.houseval,na.rm=TRUE)
+std.diff.income = (diff.income - mean(diff.income,na.rm=TRUE))/sd(diff.income,na.rm=TRUE)
+```
+
+Get scores
+```{r}
+gent.score = std.diffNHWhite + std.diff.2534 + std.diff.notpov + std.diff.prof + std.diff.medrent + std.diff.houseval + std.diff.income
+
+head(gent.score)
+range(gent.score,na.rm=TRUE)
+```
+
+Make a histograph of scores
+
+```{r}
+hist(gent.score,10)
+```
+
+Check the length of the 'tract' (FIPS code) and the gentrification values.
+
+```{r}
+length(gentrification_vars_2010$tract)
+
+length(gent.score)
+```
+
+Check the tract ids are the same between the 2010 and 2016 data (is the max difference zero?)
+
+```{r}
+max(gentrification_vars_2016$tract - gentrification_vars_2010$tract)
+```
+
+Great, we're ready to go.
+
+## Mapping the Gentrification Scores
+
+How many tracts in the mapped data?
+
+```{r}
+length(metro_atlanta_income$GEOID)
+```
+
+Hmmmm. 632 features.   We have 655.   Let's match on GEOID and tract.
+
+This involves:
+
+- making a data frame with the 'tract' variable from gentrification_vars_2016, and our new gent.score.
+
+- renaming "tract" (which is variable V1 in our data frame since we didn't name it!)
+
+- Change our new GEOID (which turns out be stored as a number) to a character variable (found this out by trial and error)
+
+- print out the first few rows with 'head'
+
+- merge the data using a 'left_join' command...this will put the variable (gent.score) from the my.gent.data frame into the metro_atlanta_income data we can map from, matched by "GEOID" (both metro_atlanta_income and my.gent.data have GEOID and both are characters so we can match them up.)
+
+```{r}
+my.gent.data = data.frame(cbind(gentrification_vars_2016$tract,gent.score)) %>%
+  rename("GEOID" = "V1", "gent_score" = "gent.score") %>%
+  mutate(GEOID = as.character(GEOID))
+
+head(my.gent.data)
+
+##Merging metro atlanta data with gentrication score data
+
+merge_data <- metro_atlanta_income %>%
+  left_join(my.gent.data, by = "GEOID")
+
+head(merge_data)
+```
+
+## Mapping Gentrification Scores
+
+```{r}
+plot(merge_data["gent_score"])
+```
+
+## Summary
+
+So, as a reminder:
+
+- We read in American Community Survey (ACS) census data from 2016 and mapped income.
+
+- We read in tables of census demographics by tract for 2010 and 2016.
+
+- We calculated standardized differences in each variable.
+
+- We summed up the standarized differences to make a score in each tract.
+
+- We merged our new data to the ACS data.
+
+- We mapped the results.
+
+Notes:  Future directions:
+
+- There are some holes in the map and we would still need to checked to make sure we have things in the right place.
+
+- We used 'plot' to make the maps, but there are other, more flexible mapping routines.  We've seen ggplot, and tmap has even more.   The rest of Chapter 6 at <https://walker-data.com/census-r/mapping-census-data-with-r.html> has great examples of additional maps!
+
